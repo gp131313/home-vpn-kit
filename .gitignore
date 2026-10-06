@@ -1,0 +1,8 @@
+config.json
+cred.dat
+ca-bundle.pem
+*.log
+*.state
+*.bak*
+DISABLED
+dist/

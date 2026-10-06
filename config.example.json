@@ -1,0 +1,7 @@
+{
+  "Server": "vpn.example.com",
+  "User": "your-vpn-login",
+  "ProbeHost": "192.168.1.1",
+  "ProbePort": 443,
+  "HomeNetworks": ["MyHomeWiFi"]
+}
