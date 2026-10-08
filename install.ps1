@@ -51,7 +51,7 @@ if ($NoPrompt) { try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch
 $Stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$KitVersion   = '1.1.0'
+$KitVersion   = '1.1.1'
 $AppsKey      = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\HomeVpnKit'
 $AppsName     = 'Home VPN Kit'
 $TaskWatchdog = 'VPN Watchdog (OpenConnect)'
