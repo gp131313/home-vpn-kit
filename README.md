@@ -34,7 +34,7 @@ VPN до домашней сети на Windows «в один клик»: OpenCo
 | Часть | Что делает |
 |---|---|
 | [OpenConnect-GUI 1.6.2](https://gui.openconnect-vpn.net/) | даёт `openconnect.exe` 9.12, драйвер Wintun и `vpnc-script-win.js`; ставится только если его нет, со сверкой SHA256 |
-| Сторож (`Connect-Vpn.ps1`) | задача Планировщика: при входе и каждые 2 минуты проверяет туннель и при обрыве поднимает его заново |
+| Сторож (`Connect-Vpn.ps1`) | задача Планировщика: каждые 2 минуты, пока вы в системе, проверяет туннель и при обрыве поднимает его заново |
 | Переключатель | задачи «VPN Disconnect» и «VPN Connect»: разорвать туннель и поставить сторожа на паузу / снять паузу |
 | [TrayPingMonitor-VPN](https://github.com/gp131313/TrayPingMonitor-VPN) | цветной кружок с подписью VPN в трее; пункт меню разрывает или поднимает VPN; ставится из последнего релиза со сверкой SHA256 |
 | .NET 10 Desktop Runtime | нужен индикатору; ставится с сайта Microsoft, если его нет |
@@ -167,7 +167,7 @@ allow the administrator prompt, enter the VPN server, login and password, click 
 Russian or English depending on the Windows display language. `HomeVpnKit-Setup-Silent.exe` installs without
 windows (settings from `config.json` next to it, password from `HVK_PASSWORD`). The installer sets up
 OpenConnect-GUI 1.6.2 if missing (SHA256-checked), stores the password with DPAPI, verifies the server CA chain
-with openconnect itself, registers a watchdog scheduled task (at logon and every 2 minutes) plus on-demand
+with openconnect itself, registers a watchdog scheduled task (every 2 minutes while you are signed in) plus on-demand
 "VPN Disconnect"/"VPN Connect" tasks, locks the script folder to Administrators, adds a Settings → Apps entry
 and installs [TrayPingMonitor-VPN](https://github.com/gp131313/TrayPingMonitor-VPN) with .NET 10 Desktop Runtime.
 Build the exe with `setup\build.ps1` (the C# compiler that ships with Windows, no SDK). License: MIT.

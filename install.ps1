@@ -379,7 +379,7 @@ foreach ($t in $LegacyTasks) {
     $lt = Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
     if ($lt -and $lt.State -ne 'Disabled') { Plan ('отключить старую задачу ' + $t); if (-not $Check) { Disable-ScheduledTask -TaskName $t | Out-Null } }
 }
-Plan ($TaskWatchdog + ': при входе и каждые 2 мин; ' + $TaskOff + ', ' + $TaskOn + ': по запросу')
+Plan ($TaskWatchdog + ': каждые 2 мин; ' + $TaskOff + ', ' + $TaskOn + ': по запросу')
 if (-not $Check) {
     $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     function New-Act([string]$script) {
@@ -387,14 +387,14 @@ if (-not $Check) {
             -Argument ('--headless "' + $ps + '" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + (Join-Path $InstallDir $script) + '"')
     }
     $principal = New-ScheduledTaskPrincipal -UserId $me.Name -LogonType Interactive -RunLevel Highest
-    $logon = New-ScheduledTaskTrigger -AtLogOn -User $me.Name
-    $logon.Delay = 'PT20S'
+    # one time trigger only: it repeats while the user is logged on, also after reboots. An AtLogOn trigger
+    # would only add a second start, and its own repetition is reset by any later edit of the task.
     $every = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 2) -RepetitionDuration (New-TimeSpan -Days 3650)
     $setW = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable `
                 -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -DontStopOnIdleEnd
     $setS = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 2) `
                 -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-    Register-ScheduledTask -TaskName $TaskWatchdog -Action (New-Act 'Connect-Vpn.ps1') -Trigger @($logon, $every) -Principal $principal -Settings $setW `
+    Register-ScheduledTask -TaskName $TaskWatchdog -Action (New-Act 'Connect-Vpn.ps1') -Trigger $every -Principal $principal -Settings $setW `
         -Description 'home-vpn-kit: keeps the OpenConnect tunnel up' -Force | Out-Null
     Register-ScheduledTask -TaskName $TaskOff -Action (New-Act 'Disconnect-Vpn.ps1') -Principal $principal -Settings $setS `
         -Description 'home-vpn-kit: tray menu Disconnect VPN' -Force | Out-Null

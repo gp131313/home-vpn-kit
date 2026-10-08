@@ -1,5 +1,5 @@
 # Connect-Vpn.ps1 - home-vpn-kit watchdog (runs from the scheduled task "VPN Watchdog (OpenConnect)"
-# every 2 minutes and at logon, with highest privileges).
+# every 2 minutes while the user is logged on, with highest privileges).
 #
 # What it does, in order:
 #   1. file DISABLED next to this script  -> do nothing (manual "Disconnect VPN")
