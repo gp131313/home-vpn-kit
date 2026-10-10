@@ -34,7 +34,7 @@ jobs:
           $stage = Join-Path $env:RUNNER_TEMP $name
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
           # the archive = the repository tree minus docs, setup and the build output (Install.cmd at the root, as get.ps1 expects)
-          git ls-files | Where-Object { $_ -notmatch '^(docs|setup|.github/workflows)/' } | ForEach-Object {
+          git ls-files | Where-Object { $_ -notmatch '^(docs|setup|\.github/workflows)/' } | ForEach-Object {
             $dst = Join-Path $stage $_
             New-Item -ItemType Directory -Path (Split-Path $dst) -Force | Out-Null
             Copy-Item $_ $dst
@@ -55,7 +55,7 @@ jobs:
           $notes = "docs/releases/$tag.md"
           $assets = @("dist/HomeVpnKit-Setup.exe", "dist/HomeVpnKit-Setup-Silent.exe", "dist/home-vpn-kit-$tag.zip", "dist/SHA256SUMS.txt")
           if (Test-Path $notes) {
-            $title = (Get-Content $notes -First 1) -replace '^\*\*|\*\*$|\.$', ''
+            $title = ((Get-Content $notes -First 1) -replace '\*', '').TrimEnd('.')
             gh release create $tag @assets --title "$tag — $title" --notes-file $notes
           } else {
             gh release create $tag @assets --title $tag --generate-notes
