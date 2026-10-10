@@ -33,7 +33,8 @@ VPN до домашней сети на Windows «в один клик»: OpenCo
 
 | Часть | Что делает |
 |---|---|
-| [OpenConnect-GUI 1.6.2](https://gui.openconnect-vpn.net/) | даёт `openconnect.exe` 9.12, драйвер Wintun и `vpnc-script-win.js`; ставится только если его нет, со сверкой SHA256 |
+| [OpenConnect-GUI 1.6.2](https://gui.openconnect-vpn.net/) | драйвер Wintun и окно для ручного подключения; ставится только если его нет, со сверкой SHA256 |
+| [OpenConnect 9.21](https://gitlab.com/openconnect/openconnect) (CLI) | `openconnect.exe` и `vpnc-script-win.js` — установщик GUI их не содержит; берётся установщик проекта OpenConnect (артефакт GitLab CI, сверка SHA256), файлы копируются в папку GUI |
 | Сторож (`Connect-Vpn.ps1`) | задача Планировщика: каждые 2 минуты, пока вы в системе, проверяет туннель и при обрыве поднимает его заново |
 | Переключатель | задачи «VPN Disconnect» и «VPN Connect»: разорвать туннель и поставить сторожа на паузу / снять паузу |
 | [TrayPingMonitor-VPN](https://github.com/gp131313/TrayPingMonitor-VPN) | цветной кружок с подписью VPN в трее; пункт меню разрывает или поднимает VPN; ставится из последнего релиза со сверкой SHA256 |

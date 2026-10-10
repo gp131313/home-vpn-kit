@@ -51,7 +51,7 @@ if ($NoPrompt) { try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch
 $Stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$KitVersion   = '1.1.1'
+$KitVersion   = '1.1.2'
 $AppsKey      = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\HomeVpnKit'
 $AppsName     = 'Home VPN Kit'
 $TaskWatchdog = 'VPN Watchdog (OpenConnect)'
@@ -59,11 +59,16 @@ $TaskOff      = 'VPN Disconnect'
 $TaskOn       = 'VPN Connect'
 $LegacyTasks  = @('VPN-CLI-Watchdog', 'OpenConnect-Watchdog', 'OpenConnect-AutoConnect')
 
-# OpenConnect-GUI 1.6.2 (ships openconnect.exe 9.12, vpnc-script-win.js, wintun.dll).
+# OpenConnect-GUI 1.6.2 (GUI, wintun.dll, vpnc-script.js). The win64 installer does NOT ship openconnect.exe
+# nor vpnc-script-win.js (seen on HP ZBook 10.10.2026) - the CLI is added from the OpenConnect project's own
+# Windows installer (GitLab CI artifact of tag v9.21, MinGW64/GnuTLS; unsigned, pinned by SHA256).
 # SHA256 computed 30.09.2026; SHA512 matches the Chocolatey package openconnect-gui 1.6.2.
 $OcUrl    = 'https://www.infradead.org/openconnect-gui/download/openconnect-gui-1.6.2-win64.exe'
 $OcSha256 = 'de08d8968e40e219932d01025521f879178ec99246802db488c0fdac9fcef11a'
 $OcDir    = Join-Path $env:ProgramFiles 'OpenConnect-GUI'
+$CliUrl    = 'https://gitlab.com/openconnect/openconnect/-/jobs/artifacts/v9.21/raw/openconnect-installer-MinGW64-GnuTLS.exe?job=MinGW64/GnuTLS'
+$CliSha256 = '6ee9e8eb9bc59ef70bb0717df7f99703f8a2ccd11d8e45d58a61f9a2e6ef7d00'
+$CliDir    = Join-Path $env:ProgramFiles 'OpenConnect'
 
 $TrayRepo = 'gp131313/TrayPingMonitor-VPN'
 $TrayDir  = Join-Path $env:LOCALAPPDATA 'Programs\TrayPingMonitor'
@@ -191,7 +196,7 @@ Step 'OpenConnect'
 if ((Test-Path (Join-Path $OcDir 'openconnect.exe')) -and (Test-Path (Join-Path $OcDir 'vpnc-script-win.js'))) {
     Ok ('уже установлен: ' + $OcDir)
 } else {
-    Plan 'скачать и установить OpenConnect-GUI 1.6.2 (с openconnect.exe 9.12)'
+    Plan 'скачать и установить OpenConnect-GUI 1.6.2'
     if (-not $Check) {
         $f = Get-Download $OcUrl 'openconnect-gui-1.6.2-win64.exe'
         Test-Hash $f $OcSha256
@@ -201,8 +206,24 @@ if ((Test-Path (Join-Path $OcDir 'openconnect.exe')) -and (Test-Path (Join-Path 
         if ($p.ExitCode -ne 0) { Fail ('установщик OpenConnect-GUI вернул ' + $p.ExitCode) }
         Start-Sleep 2
         Get-Process openconnect-gui -ErrorAction SilentlyContinue | Stop-Process -Force
-        if (-not (Test-Path (Join-Path $OcDir 'openconnect.exe'))) { Fail ('после установки нет ' + $OcDir + '\openconnect.exe') }
         Ok 'установлен'
+    }
+    if ($Check -or -not (Test-Path (Join-Path $OcDir 'openconnect.exe')) -or -not (Test-Path (Join-Path $OcDir 'vpnc-script-win.js'))) {
+        Plan ('добавить openconnect.exe и vpnc-script-win.js из установщика OpenConnect 9.21 (CLI) в ' + $OcDir)
+        if (-not $Check) {
+            if (-not (Test-Path (Join-Path $CliDir 'openconnect.exe'))) {
+                $f = Get-Download $CliUrl 'openconnect-9.21-installer-MinGW64-GnuTLS.exe'
+                Test-Hash $f $CliSha256
+                # NSIS: /D must be the last argument and unquoted, so one string
+                $p = Start-Process $f -ArgumentList ('/S /D=' + $CliDir) -Wait -PassThru
+                if ($p.ExitCode -ne 0) { Fail ('установщик OpenConnect CLI вернул ' + $p.ExitCode) }
+            }
+            foreach ($n in 'openconnect.exe', 'vpnc-script-win.js', 'list-system-keys.exe') {
+                if (Test-Path (Join-Path $CliDir $n)) { Copy-Item (Join-Path $CliDir $n) $OcDir -Force }
+            }
+            if (-not (Test-Path (Join-Path $OcDir 'openconnect.exe'))) { Fail ('после установки нет ' + $OcDir + '\openconnect.exe') }
+            Ok ('openconnect: ' + ((& (Join-Path $OcDir 'openconnect.exe') --version 2>&1 | Select-Object -First 1) -join ''))
+        }
     }
 }
 

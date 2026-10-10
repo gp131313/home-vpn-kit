@@ -22,8 +22,8 @@ using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Home VPN Kit Setup")]
 [assembly: AssemblyProduct("Home VPN Kit")]
-[assembly: AssemblyVersion("1.1.1.0")]
-[assembly: AssemblyFileVersion("1.1.1.0")]
+[assembly: AssemblyVersion("1.1.2.0")]
+[assembly: AssemblyFileVersion("1.1.2.0")]
 
 public class KitSettings
 {
@@ -34,7 +34,7 @@ public class KitSettings
 public static class Setup
 {
     public const string Title = "Home VPN Kit";
-    public const string Version = "1.1.1";
+    public const string Version = "1.1.2";
     public static bool Ru = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ru";
     public static string T(string ru, string en) { return Ru ? ru : en; }
 
