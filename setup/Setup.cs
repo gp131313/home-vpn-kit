@@ -38,6 +38,7 @@ public static class Setup
 {
     public const string Title = "Home VPN Kit";
     public const string Version = "1.1.3";
+    public static string CliKitUrl = "";   // /kiturl= given on the command line (wizard mode has no fields for it)
     public static bool Ru = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ru";
     public static string T(string ru, string en) { return Ru ? ru : en; }
 
@@ -66,7 +67,7 @@ public static class Setup
             else if (k == "user") { cli.User = v; cliAny = true; }
             else if (k == "probe") { cli.ProbeHost = v; cliAny = true; }
             else if (k == "nets") { cli.Nets = v; cliAny = true; }
-            else if (k == "kiturl") { cli.KitUrl = v; cliAny = true; }
+            else if (k == "kiturl") { cli.KitUrl = v; cliAny = true; Setup.CliKitUrl = v; }
             else if (k == "tunnel") tunnelOnly = true;
         }
         if (silent)
@@ -529,6 +530,7 @@ public class Wizard : Form
     {
         KitSettings s = Setup.LoadSettings();
         string kit = s.KitUrl.Trim();
+        if (kit == "") kit = Setup.CliKitUrl.Trim();
         if (kit == "")
         {
             MessageBox.Show(this,
