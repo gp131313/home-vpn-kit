@@ -4,9 +4,11 @@
 // with -NoPrompt. The VPN password goes to install.ps1 through stdin, never through the command line.
 // The manifest (app.manifest) asks for administrator rights once, at start. Build: build.ps1.
 //   HomeVpnKit-Setup.exe          wizard: Next -> settings -> Install -> Finish
+//                                 plus a button on the first page: "HTTPS tunnel only" (Telegram + Hermes)
 //   HomeVpnKit-Setup-Silent.exe   no windows at all (same as /silent); settings from config.json next to
 //                                 the exe or from the previous installation, password from HVK_PASSWORD or
 //                                 the saved one; /dir=<folder> /skiptray /server= /user= /probe= /nets=
+//                                 /kiturl=<folder url> /tunnel
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -22,19 +24,20 @@ using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Home VPN Kit Setup")]
 [assembly: AssemblyProduct("Home VPN Kit")]
-[assembly: AssemblyVersion("1.1.2.0")]
-[assembly: AssemblyFileVersion("1.1.2.0")]
+[assembly: AssemblyVersion("1.1.3.0")]
+[assembly: AssemblyFileVersion("1.1.3.0")]
 
 public class KitSettings
 {
     public string Server = "", User = "", ProbeHost = "192.168.1.1", Nets = "";
+    public string KitUrl = "";   // folder with the tunnel components (hermes-http.ps1, telegram-tunnel.ps1)
     public bool Tray = true;
 }
 
 public static class Setup
 {
     public const string Title = "Home VPN Kit";
-    public const string Version = "1.1.2";
+    public const string Version = "1.1.3";
     public static bool Ru = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ru";
     public static string T(string ru, string en) { return Ru ? ru : en; }
 
@@ -50,7 +53,7 @@ public static class Setup
     static int Main(string[] args)
     {
         bool silent = Path.GetFileNameWithoutExtension(Application.ExecutablePath).IndexOf("silent", StringComparison.OrdinalIgnoreCase) >= 0;
-        KitSettings cli = new KitSettings(); bool cliAny = false;
+        KitSettings cli = new KitSettings(); bool cliAny = false; bool tunnelOnly = false;
         foreach (string a in args)
         {
             string s = a.TrimStart('/', '-');
@@ -63,13 +66,20 @@ public static class Setup
             else if (k == "user") { cli.User = v; cliAny = true; }
             else if (k == "probe") { cli.ProbeHost = v; cliAny = true; }
             else if (k == "nets") { cli.Nets = v; cliAny = true; }
+            else if (k == "kiturl") { cli.KitUrl = v; cliAny = true; }
+            else if (k == "tunnel") tunnelOnly = true;
         }
         if (silent)
         {
             try
             {
                 KitSettings s = LoadSettings();
-                if (cliAny) { if (cli.Server != "") s.Server = cli.Server; if (cli.User != "") s.User = cli.User; if (cli.ProbeHost != "") s.ProbeHost = cli.ProbeHost; if (cli.Nets != "") s.Nets = cli.Nets; }
+                if (cliAny) { if (cli.Server != "") s.Server = cli.Server; if (cli.User != "") s.User = cli.User; if (cli.ProbeHost != "") s.ProbeHost = cli.ProbeHost; if (cli.Nets != "") s.Nets = cli.Nets; if (cli.KitUrl != "") s.KitUrl = cli.KitUrl; }
+                if (tunnelOnly)
+                {
+                    if (s.KitUrl.Trim() == "") { Log("tunnel: no components folder (config.json KitUrl or /kiturl=)"); return 2; }
+                    return RunTunnel(s.KitUrl, delegate(string line) { Log(line); });
+                }
                 string pw = Environment.GetEnvironmentVariable("HVK_PASSWORD") ?? "";
                 if (s.Server == "" || s.User == "") { Log("silent: server or user not set (config.json next to the exe or /server= /user=)"); return 2; }
                 if (pw == "" && !CredExists) { Log("silent: no password (HVK_PASSWORD) and none saved"); return 2; }
@@ -129,6 +139,7 @@ public static class Setup
                 if (d.TryGetValue("Server", out v) && v != null) s.Server = v.ToString();
                 if (d.TryGetValue("User", out v) && v != null) s.User = v.ToString();
                 if (d.TryGetValue("ProbeHost", out v) && v != null) s.ProbeHost = v.ToString();
+                if (d.TryGetValue("KitUrl", out v) && v != null) s.KitUrl = v.ToString();
                 if (d.TryGetValue("HomeNetworks", out v) && v is System.Collections.IEnumerable && !(v is string))
                 {
                     List<string> l = new List<string>();
@@ -192,7 +203,6 @@ public static class Setup
             using (FileStream dst = File.Create(Path.Combine(SetupDir, name)))
                 src.CopyTo(dst);
 
-        string ps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), @"System32\WindowsPowerShell\v1.0\powershell.exe");
         string nets = s.Nets.Trim();
         string args = "-NoProfile -ExecutionPolicy Bypass -File " + Q(Path.Combine(SetupDir, "install.ps1"))
                     + " -NoPrompt -PasswordStdin -ForUser " + Q(Environment.UserDomainName + "\\" + Environment.UserName)
@@ -200,12 +210,19 @@ public static class Setup
                     + " -Server " + Q(s.Server.Trim()) + " -User " + Q(s.User.Trim()) + " -ProbeHost " + Q(s.ProbeHost.Trim())
                     + " -HomeNetworks " + Q(nets == "" ? "," : nets)   // a lone comma = no home networks (an empty value would keep the old list)
                     + (SkipTray || !s.Tray ? " -SkipTray" : "");
+        onLine("> install.ps1 " + args.Substring(args.IndexOf("-NoPrompt")));
+        return RunPs(args, password, onLine);
+    }
+
+    // runs Windows PowerShell 5.1 with the given arguments; stdinLine (may be empty) goes to stdin
+    static int RunPs(string args, string stdinLine, Action<string> onLine)
+    {
+        string ps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), @"System32\WindowsPowerShell\v1.0\powershell.exe");
         ProcessStartInfo psi = new ProcessStartInfo(ps, args);
         psi.UseShellExecute = false; psi.CreateNoWindow = true;
         psi.RedirectStandardInput = true; psi.RedirectStandardOutput = true; psi.RedirectStandardError = true;
         psi.StandardOutputEncoding = Encoding.UTF8; psi.StandardErrorEncoding = Encoding.UTF8;
         psi.Environment.Remove("PSModulePath");   // PowerShell 7 module path breaks 5.1 (see install.ps1)
-        onLine("> install.ps1 " + args.Substring(args.IndexOf("-NoPrompt")));
         using (Process p = new Process())
         {
             p.StartInfo = psi;
@@ -213,11 +230,65 @@ public static class Setup
             p.ErrorDataReceived += delegate(object o, DataReceivedEventArgs e) { if (e.Data != null) onLine("! " + e.Data); };
             p.Start();
             p.BeginOutputReadLine(); p.BeginErrorReadLine();
-            p.StandardInput.WriteLine(password);   // empty line = keep the saved password
+            if (stdinLine != null) p.StandardInput.WriteLine(stdinLine);
             p.StandardInput.Close();
             p.WaitForExit();
             return p.ExitCode;
         }
+    }
+
+    // Windows PowerShell 5.1 treats a BOM-less UTF-8 .ps1 as ANSI (the Cyrillic messages become a parse error)
+    static void EnsureUtf8Bom(string path)
+    {
+        byte[] b = File.ReadAllBytes(path);
+        if (b.Length >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF) return;
+        byte[] n = new byte[b.Length + 3];
+        n[0] = 0xEF; n[1] = 0xBB; n[2] = 0xBF;
+        Buffer.BlockCopy(b, 0, n, 3, b.Length);
+        File.WriteAllBytes(path, n);
+    }
+
+    // "HTTPS tunnel only": downloads the door components into <Dir>\setup and runs them one by one.
+    // No VPN, no password: the components set up their own Task Scheduler watchers.
+    public static int RunTunnel(string kitUrl, Action<string> onLine)
+    {
+        string baseUrl = (kitUrl ?? "").Trim().TrimEnd('/');
+        if (baseUrl == "") throw new InvalidOperationException(T("Не указан адрес раздачи компонентов (KitUrl).", "The components folder (KitUrl) is not set."));
+        // .NET Framework defaults to TLS 1.0, the door accepts 1.2+ only ("could not create SSL/TLS secure channel")
+        System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)3072;
+        Directory.CreateDirectory(SetupDir);
+        string[] comps = { "hermes-http.ps1", "telegram-tunnel.ps1" };
+        foreach (string name in comps)
+        {
+            string dst = Path.Combine(SetupDir, name);
+            string url = baseUrl + "/" + name;
+            onLine("> " + url);
+            try
+            {
+                using (System.Net.WebClient wc = new System.Net.WebClient())
+                {
+                    wc.Headers["User-Agent"] = "HomeVpnKit-Setup/" + Version;
+                    wc.DownloadFile(url, dst);
+                }
+            }
+            catch (Exception ex)
+            {
+                onLine("! " + name + ": " + ex.Message);
+                return 1;
+            }
+            onLine("  скачано: " + name + " (" + new FileInfo(dst).Length + " байт)");
+            EnsureUtf8Bom(dst);   // Windows PowerShell 5.1 reads a BOM-less UTF-8 script as ANSI and fails on Cyrillic
+        }
+        foreach (string name in comps)
+        {
+            string dst = Path.Combine(SetupDir, name);
+            string args = "-NoProfile -ExecutionPolicy Bypass -File " + Q(dst);
+            onLine("> " + name);
+            int code = RunPs(args, null, onLine);
+            if (code != 0) { onLine("! " + name + ": код " + code); return code; }
+        }
+        onLine("ok: каналы установлены");
+        return 0;
     }
 }
 
@@ -232,9 +303,9 @@ public class Wizard : Form
     TextBox srvBox, usrBox, pw1Box, pw2Box, probeBox, netsBox, logBox;
     CheckBox trayBox;
     ProgressBar bar;
-    Button back, next, cancel;
+    Button back, next, cancel, tunnel;
     StringBuilder errors = new StringBuilder();
-    bool homeOk;
+    bool homeOk, tunnelMode;
     static string T(string ru, string en) { return Setup.T(ru, en); }
     float scale = 1F;
     int S(int v) { return (int)Math.Round(v * scale); }
@@ -246,7 +317,7 @@ public class Wizard : Form
         SuspendLayout();
         AutoScaleMode = AutoScaleMode.None;   // scaled by hand: the coordinates below are logical px (96 dpi)
         using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) scale = g.DpiX / 96F;
-        ClientSize = Z(520, 512);
+        ClientSize = Z(520, 546);
         Text = T("Установка ", "Setup — ") + Setup.Title;
         Font = new Font("Segoe UI", 9F);
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -290,17 +361,23 @@ public class Wizard : Form
         logBox = new TextBox(); logBox.Multiline = true; logBox.ReadOnly = true; logBox.ScrollBars = ScrollBars.Vertical; logBox.WordWrap = false;
         logBox.Font = new Font("Consolas", 8.5F); logBox.BackColor = Color.White; logBox.Location = P(24, 110); logBox.Size = Z(472, 348); logBox.Visible = false; logBox.TabStop = false;
 
-        Label line2 = new Label(); line2.BorderStyle = BorderStyle.Fixed3D; line2.Location = P(0, 466); line2.Size = Z(520, 2);
-        back = new Button(); back.Text = T("< Назад", "< Back"); back.Location = P(226, 478); back.Size = Z(88, 26);
-        next = new Button(); next.Location = P(320, 478); next.Size = Z(88, 26);
-        cancel = new Button(); cancel.Text = T("Отмена", "Cancel"); cancel.Location = P(420, 478); cancel.Size = Z(88, 26);
+        Label line2 = new Label(); line2.BorderStyle = BorderStyle.Fixed3D; line2.Location = P(0, 500); line2.Size = Z(520, 2);
+        back = new Button(); back.Text = T("< Назад", "< Back"); back.Location = P(226, 512); back.Size = Z(88, 26);
+        next = new Button(); next.Location = P(320, 512); next.Size = Z(88, 26);
+        cancel = new Button(); cancel.Text = T("Отмена", "Cancel"); cancel.Location = P(420, 512); cancel.Size = Z(88, 26);
         back.Click += delegate { ShowPage(0); };
         next.Click += delegate { if (page == 0) ShowPage(1); else if (page == 1) StartInstall(); else Close(); };
         cancel.Click += delegate { Close(); };
+        // separate path: no VPN, only the HTTPS tunnel to the home door (Telegram + Hermes)
+        tunnel = new Button();
+        tunnel.Text = T("Только канал через HTTPS: Telegram и Hermes (без VPN)", "HTTPS tunnel only: Telegram and Hermes (no VPN)");
+        tunnel.Location = P(24, 456); tunnel.Size = Z(472, 28);
+        tunnel.Click += delegate { StartTunnel(); };
         AcceptButton = next; CancelButton = cancel;
 
         Controls.Add(bar); Controls.Add(logBox); Controls.Add(optPanel); Controls.Add(body);
         Controls.Add(header); Controls.Add(line1); Controls.Add(line2);
+        Controls.Add(tunnel);
         Controls.Add(back); Controls.Add(next); Controls.Add(cancel);
         ResumeLayout(false);
         PerformLayout();
@@ -322,6 +399,7 @@ public class Wizard : Form
     {
         page = p;
         optPanel.Visible = (p == 1);
+        tunnel.Visible = (p == 0);
         body.Visible = (p == 0 || (p == 3 && !failed));
         bar.Visible = (p == 2);
         logBox.Visible = (p == 2 || (p == 3 && failed));
@@ -339,14 +417,16 @@ public class Wizard : Form
                             + "Понадобятся адрес VPN-сервера, логин и пароль — их даёт тот, кто настраивал домашний роутер.\n\n"
                             + "Что будет установлено: OpenConnect-GUI (если его ещё нет), скрипты в " + Setup.Dir + ", "
                             + "три задачи Планировщика и индикатор в трее (с .NET Desktop Runtime, если его нет). "
-                            + "Нужен интернет.\n\nНажмите «Далее», чтобы продолжить.",
+                            + "Нужен интернет.\n\nНажмите «Далее», чтобы продолжить.\n\n"
+                            + "Нужны только Telegram и Hermes без VPN — нажмите «Только канал через HTTPS» ниже.",
                               "This setup configures a VPN to your home network (OpenConnect / AnyConnect) on this computer: "
                             + "the tunnel comes up by itself when you sign in to Windows and after every drop, and a coloured dot "
                             + "appears in the tray — green when home is reachable.\n\n"
                             + "You will need the VPN server address, login and password from whoever set up the home router.\n\n"
                             + "What gets installed: OpenConnect-GUI (if missing), scripts in " + Setup.Dir + ", "
                             + "three Task Scheduler tasks and the tray indicator (with .NET Desktop Runtime if missing). "
-                            + "An internet connection is required.\n\nClick Next to continue.");
+                            + "An internet connection is required.\n\nClick Next to continue.\n\n"
+                            + "Only Telegram and Hermes, no VPN? Click \"HTTPS tunnel only\" below.");
                 next.Text = T("Далее >", "Next >");
                 break;
             case 1:
@@ -356,8 +436,10 @@ public class Wizard : Form
                 (srvBox.Text == "" ? srvBox : (pw1Box.Text == "" && !Setup.CredExists ? pw1Box : srvBox)).Focus();
                 break;
             case 2:
-                head.Text = T("Установка", "Installing");
-                sub.Text = T("Подождите: загрузка и настройка занимают 1–3 минуты", "Please wait: downloading and setting up takes 1–3 minutes");
+                head.Text = tunnelMode ? T("Настройка канала", "Setting up the tunnel") : T("Установка", "Installing");
+                sub.Text = tunnelMode
+                    ? T("Загрузка компонентов и настройка автозапуска — 1–2 минуты", "Downloading the components and setting up autostart — 1–2 minutes")
+                    : T("Подождите: загрузка и настройка занимают 1–3 минуты", "Please wait: downloading and setting up takes 1–3 minutes");
                 break;
             case 3:
                 if (failed)
@@ -368,6 +450,25 @@ public class Wizard : Form
                     sub.Text = errors.Length > 0 ? first.Trim() : T("см. журнал ниже", "see the log below");
                     Line(T("Журнал установки: ", "Setup log: ") + Setup.LogFile);
                     next.Text = T("Закрыть", "Close");
+                }
+                else if (tunnelMode)
+                {
+                    head.Text = T("Канал готов", "The tunnel is ready");
+                    sub.Text = T("Telegram и Hermes работают через домашнюю точку входа", "Telegram and Hermes now go through the home door");
+                    body.Text = T("Компоненты установлены: сторож поднимает канал сам при входе в Windows и после обрывов, VPN не нужен.\n\n"
+                                + "Telegram: «Настройки» → «Продвинутые» → «Тип соединения» → «Прокси» → добавить SOCKS5, "
+                                + "хост 127.0.0.1, порт 1080, логин и пароль пустые.\n\n"
+                                + "Hermes: «Настройки» → «Шлюз» → «Подключение по SSH» → хост hermes-http "
+                                + "(алиас уже прописан в %USERPROFILE%\\.ssh\\config).\n\n"
+                                + "Проверка канала: ssh hermes-http hostname — должно вернуть имя домашнего сервера.\n"
+                                + "Журналы: C:\\HermesScripts\\logs\\wstunnel-tg.log и wstunnel-web.log.",
+                                  "The components are installed: the watcher brings the tunnel up at sign-in and after drops, no VPN needed.\n\n"
+                                + "Telegram: Settings → Advanced → Connection type → Proxy → add SOCKS5, host 127.0.0.1, port 1080, empty login and password.\n\n"
+                                + "Hermes: Settings → Gateway → \"SSH connection\" → host hermes-http "
+                                + "(the alias is already in %USERPROFILE%\\.ssh\\config).\n\n"
+                                + "Check: ssh hermes-http hostname — should print the home server name.\n"
+                                + "Logs: C:\\HermesScripts\\logs\\wstunnel-tg.log and wstunnel-web.log.");
+                    next.Text = T("Готово", "Finish");
                 }
                 else
                 {
@@ -420,6 +521,30 @@ public class Wizard : Form
         Task.Factory.StartNew<int>(delegate
         {
             try { return Setup.RunInstall(s, pw, Line); }
+            catch (Exception ex) { Line("! " + ex.Message); return 1; }
+        }).ContinueWith(delegate(Task<int> t) { Done(t.Result); }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    void StartTunnel()
+    {
+        KitSettings s = Setup.LoadSettings();
+        string kit = s.KitUrl.Trim();
+        if (kit == "")
+        {
+            MessageBox.Show(this,
+                T("Адрес раздачи компонентов (KitUrl) не задан.\n\nПоложите рядом с установщиком config.json с полем \"KitUrl\" "
+                + "или запустите установщик с ключом /kiturl=https://…",
+                  "The components folder (KitUrl) is not set.\n\nPut a config.json with the \"KitUrl\" field next to the installer "
+                + "or run it with /kiturl=https://…"),
+                Setup.Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        tunnelMode = true; failed = false; homeOk = false;
+        logBox.Clear(); errors.Length = 0;
+        ShowPage(2);
+        Task.Factory.StartNew<int>(delegate
+        {
+            try { return Setup.RunTunnel(kit, Line); }
             catch (Exception ex) { Line("! " + ex.Message); return 1; }
         }).ContinueWith(delegate(Task<int> t) { Done(t.Result); }, TaskScheduler.FromCurrentSynchronizationContext());
     }

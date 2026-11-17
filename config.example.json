@@ -3,5 +3,6 @@
   "User": "your-vpn-login",
   "ProbeHost": "192.168.1.1",
   "ProbePort": 443,
-  "HomeNetworks": ["MyHomeWiFi"]
+  "HomeNetworks": ["MyHomeWiFi"],
+  "KitUrl": "https://door.example.com/kit-0123456789abcdef0123456789abcdef"
 }
